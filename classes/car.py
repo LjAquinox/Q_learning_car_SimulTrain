@@ -1,6 +1,7 @@
 import pygame
 import math
 from config import *
+from classes.helpers import line_segment_intersection
 
 class Car:
     def __init__(self, x, y):
