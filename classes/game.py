@@ -23,6 +23,11 @@ class Game:
         self.show_rays = True # Toggle ray display with 'R'
         self.game_over = False
         
+        # Gate tracking
+        self.current_gate_index = 0  # Index of the next gate to pass
+        self.gate_passed = False  # Flag to prevent multiple triggers
+        self.score = 0  # Track score
+        
         # Restart button properties
         self.restart_button = pygame.Rect(WIDTH//2 - 50, HEIGHT//2 + 30, 100, 40)
         self.restart_text = self.font.render("Restart", True, WHITE)
@@ -50,6 +55,9 @@ class Game:
                     self.car.vel = pygame.Vector2(0, 0)
                     self.car.angle = 0 # Reset angle too
                     self.game_over = False
+                    self.current_gate_index = 0  # Reset gate tracking
+                    self.gate_passed = False
+                    self.score = 0
 
         except FileNotFoundError:
             print(f"Error: Map file not found '{filepath}'. Using empty map.")
@@ -96,16 +104,22 @@ class Game:
         self.car.update(dt)
         self.car.cast_rays(self.walls)
 
-        # Check collision
+        # Check collision with walls
         if self.car.check_collision_with_elements(self.walls):
              print("Wall Collision!")
-             self.game_over = True # Stop the game on collision for now
-             # For AI, we might give a negative reward and reset instead
-             # self.car.vel = pygame.Vector2(0,0) # Or just stop the car
+             self.game_over = True
 
-        if self.car.check_collision_with_elements(self.gates):
-            print("Gate collision!")
-            #self.game_over = True # Stop the game on collision for now
+        # Check collision with current gate
+        if self.current_gate_index < len(self.gates):
+            current_gate = [self.gates[self.current_gate_index]]
+            if self.car.check_collision_with_elements(current_gate):
+                if not self.gate_passed:
+                    print(f"Passed gate {self.current_gate_index + 1}!")
+                    self.gate_passed = True
+                    self.score += 1
+                    self.current_gate_index = (self.current_gate_index + 1) % len(self.gates)
+            else:
+                self.gate_passed = False  # Reset the flag when not colliding with gate
 
     def reset_game(self):
         """Reset the game state to start a new game"""
@@ -113,6 +127,9 @@ class Game:
         self.car.vel = pygame.Vector2(0, 0)
         self.car.angle = 0
         self.game_over = False
+        self.current_gate_index = 0
+        self.gate_passed = False
+        self.score = 0
 
     def draw(self):
         self.screen.fill(BLACK)
@@ -121,9 +138,15 @@ class Game:
         for wall in self.walls:
             pygame.draw.line(self.screen, RED, wall[0], wall[1], 3)
 
-        # Draw gates
-        for gate in self.gates:
-            pygame.draw.line(self.screen, GREEN, gate[0], gate[1], 3)
+        # Draw gates with different colors for current and passed gates
+        for i, gate in enumerate(self.gates):
+            if i == self.current_gate_index:
+                color = GREEN  # Current gate
+            elif i < self.current_gate_index:
+                color = (0, 100, 0)  # Passed gates (darker green)
+            else:
+                color = (100, 100, 100)  # Future gates (gray)
+            pygame.draw.line(self.screen, color, gate[0], gate[1], 3)
 
         # Draw car
         self.car.draw(self.screen)
@@ -133,9 +156,14 @@ class Game:
             self.car.draw_rays(self.screen)
             self.car.draw_rays_distances(self.screen, self.font)
             
-        # Draw game state info (optional)
+        # Draw game state info
         speed_text = self.font.render(f"Speed: {self.car.vel.length():.1f}", True, WHITE)
         self.screen.blit(speed_text, (10, 10))
+        
+        # Draw score and current gate in top right corner
+        score_text = self.font.render(f"Score: {self.score} | Next Gate: {self.current_gate_index + 1}/{len(self.gates)}", True, WHITE)
+        score_rect = score_text.get_rect(topright=(WIDTH - 10, 10))
+        self.screen.blit(score_text, score_rect)
 
         if self.game_over:
             # Draw game over text

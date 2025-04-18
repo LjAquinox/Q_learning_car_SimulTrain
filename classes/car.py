@@ -26,7 +26,7 @@ class Car:
 
         # Raycasting
         self.num_rays = 9 # Number of rays
-        self.ray_length = 200 # Maximum ray length
+        self.ray_length = 800 # Maximum ray length
         self.ray_spread = math.pi * 1.5 # Total angle covered by rays (e.g., 270 degrees)
         self.ray_distances = [self.ray_length] * self.num_rays
         self.rays_end_points = [(0,0)] * self.num_rays # For display
