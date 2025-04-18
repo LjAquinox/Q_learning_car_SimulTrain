@@ -107,7 +107,7 @@ class Car:
             self.ray_distances.append(closest_dist)
             self.rays_end_points.append(actual_ray_end)
 
-    def check_collision_walls(self, walls):
+    def check_collision_with_elements(self, elements):
         """ Checks simple collision of the car with walls.
             Returns True if collision, False otherwise.
             Uses a simplified oriented rectangle.
@@ -140,50 +140,13 @@ class Car:
 
         # Check intersection of each car segment with each wall
         for car_seg_start, car_seg_end in car_segments:
-            for wall in walls:
-                wall_start = pygame.Vector2(wall[0])
-                wall_end = pygame.Vector2(wall[1])
-                if line_segment_intersection(car_seg_start, car_seg_end, wall_start, wall_end):
+            for elem in elements:
+                elem_start = pygame.Vector2(elem[0])
+                elem_end = pygame.Vector2(elem[1])
+                if line_segment_intersection(car_seg_start, car_seg_end, elem_start, elem_end):
                     return True # Collision detected
         return False # No collision
     
-    def check_collision_gates(self, gates):
-        """ Checks car collision with gates. """
-        # Check if the car is crossing a gate
-        car_rect = pygame.Rect(0, 0, self.height, self.width)
-        car_rect.center = self.pos
-        
-        # Points of the non-rotated rectangle
-        points = [car_rect.topleft, car_rect.topright, car_rect.bottomright, car_rect.bottomleft]
-
-        # Rotate points around the car's center
-        center = pygame.Vector2(self.pos)
-        cos_a = math.cos(self.angle)
-        sin_a = math.sin(self.angle)
-        rotated_points = []
-        for p in points:
-            p_vec = pygame.Vector2(p) - center
-            x_new = p_vec.x * cos_a - p_vec.y * sin_a
-            y_new = p_vec.x * sin_a + p_vec.y * cos_a
-            rotated_points.append(center + pygame.Vector2(x_new, y_new))
-
-        # Segments of the car's collision rectangle
-        car_segments = [
-            (rotated_points[0], rotated_points[1]),
-            (rotated_points[1], rotated_points[2]),
-            (rotated_points[2], rotated_points[3]),
-            (rotated_points[3], rotated_points[0]),
-        ]
-
-        # Check intersection of each car segment with each wall
-        for car_seg_start, car_seg_end in car_segments:
-            for gate in gates:
-                gate_start = pygame.Vector2(gate[0])
-                gate_end = pygame.Vector2(gate[1])
-                if line_segment_intersection(car_seg_start, car_seg_end, gate_start, gate_end):
-                    return True # Collision detected
-
-        return False # No collision
 
     def draw(self, screen):
         # Draw the car as an oriented rectangle

@@ -7,7 +7,7 @@ from config import *
 from classes import Game
 
 MAP_DIR = "maps"
-DEFAULT_MAP = "map.json" # Make sure this file exists in MAP_DIR
+DEFAULT_MAP = "map.json"
 
 # --- Main Execution ---
 if __name__ == "__main__":

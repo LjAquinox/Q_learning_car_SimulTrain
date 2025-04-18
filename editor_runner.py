@@ -4,10 +4,10 @@ import json
 import math
 import os
 from config import *
-from classes.editor import Editor
+from classes import Editor
 
+MAP_DIR = "maps"
 FILENAME_DEFAULT = "map.json"
-MAP_DIR = "maps" # Create a 'maps' folder next to the script
 
 # --- Main Execution ---
 if __name__ == "__main__":

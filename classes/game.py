@@ -89,13 +89,13 @@ class Game:
         self.car.cast_rays(self.walls)
 
         # Check collision
-        if self.car.check_collision_walls(self.walls):
+        if self.car.check_collision_with_elements(self.walls):
              print("Wall Collision!")
              self.game_over = True # Stop the game on collision for now
              # For AI, we might give a negative reward and reset instead
              # self.car.vel = pygame.Vector2(0,0) # Or just stop the car
 
-        if self.car.check_collision_gates(self.gates):
+        if self.car.check_collision_with_elements(self.gates):
             print("Gate collision!")
             self.game_over = True # Stop the game on collision for now
 
