@@ -16,7 +16,7 @@ class Car:
         self.max_speed = 5.0
         self.acceleration = 0.1
         self.brake_power = 0.1
-        self.friction = 0.03 # Friction coefficient
+        self.friction = 0.06 # Friction coefficient
         self.turn_speed = 0.05 # Radians per frame at full speed
         self.min_speed_for_turn = 0.5 # Minimum speed to be able to turn
 

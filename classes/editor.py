@@ -12,6 +12,7 @@ class Editor:
         pygame.display.set_caption("Map Editor - Mode: WALL (W/G/S/L/Z/RMB/Q)")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 24)
+        self.big_font = pygame.font.SysFont(None, 36)
 
         self.elements = {"walls": [], "gates": [], "start_pos": None} # Structure for JSON
         self.history = [] # For simple undo
@@ -20,8 +21,31 @@ class Editor:
         self.drawing_gate_start = None # Stores the first point of the gate being drawn
         self.running = True
 
+        # Map selection UI state
+        self.show_map_selection = False
+        self.available_maps = []
+        self.current_map_index = 0
+        self.map_selection_rect = pygame.Rect(WIDTH//2 - 200, HEIGHT//2 - 50, 400, 100)
+        self.left_arrow_rect = pygame.Rect(WIDTH//2 - 250, HEIGHT//2 - 25, 50, 50)
+        self.right_arrow_rect = pygame.Rect(WIDTH//2 + 200, HEIGHT//2 - 25, 50, 50)
+
+        # Save UI state
+        self.show_save_ui = False
+        self.save_input_text = ""
+        self.save_input_rect = pygame.Rect(WIDTH//2 - 200, HEIGHT//2 - 25, 400, 50)
+        self.save_input_active = False
+
         if not os.path.exists(MAP_DIR):
             os.makedirs(MAP_DIR)
+        
+        self.refresh_available_maps()
+
+    def refresh_available_maps(self):
+        """Refresh the list of available map files"""
+        self.available_maps = [f for f in os.listdir(MAP_DIR) if f.endswith('.json')]
+        if not self.available_maps:
+            self.available_maps = [FILENAME_DEFAULT]
+        self.current_map_index = 0
 
     def save_state(self):
         # Saves a deep copy of the current state for undo
@@ -133,33 +157,80 @@ class Editor:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q:
                     self.running = False
-                elif event.key == pygame.K_w:
-                    self.mode = "wall"
-                    self.drawing_wall_start = None
-                    self.drawing_gate_start = None
-                    pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
-                    print("Mode: Add Walls")
-                elif event.key == pygame.K_g:
-                    self.mode = "gate"
-                    self.drawing_wall_start = None
-                    self.drawing_gate_start = None
-                    pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
-                    print("Mode: Add Gates")
-                elif event.key == pygame.K_p: # 'P' for Start Position
-                    self.mode = "start"
-                    self.drawing_wall_start = None
-                    self.drawing_gate_start = None
-                    pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
-                    print("Mode: Set Start Position")
-                elif event.key == pygame.K_s:
-                    self.save_map()
-                elif event.key == pygame.K_l:
-                    self.load_map()
-                elif event.key == pygame.K_z: # Undo
-                    self.undo()
+                elif self.show_save_ui:
+                    # Handle save UI input
+                    if event.key == pygame.K_ESCAPE:
+                        self.show_save_ui = False
+                        self.save_input_active = False
+                    elif event.key == pygame.K_RETURN:
+                        if self.save_input_text:
+                            self.save_map(self.save_input_text)
+                        self.show_save_ui = False
+                        self.save_input_active = False
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.save_input_text = self.save_input_text[:-1]
+                    elif len(self.save_input_text) < 20:  # Limit filename length
+                        if event.unicode.isalnum() or event.unicode in ['.', '_', '-']:
+                            self.save_input_text += event.unicode
+                elif self.show_map_selection:
+                    # Handle map selection UI
+                    if event.key == pygame.K_ESCAPE:
+                        self.show_map_selection = False
+                    elif event.key == pygame.K_RETURN:
+                        self.load_map(self.available_maps[self.current_map_index])
+                        self.show_map_selection = False
+                    elif event.key == pygame.K_LEFT:
+                        self.current_map_index = (self.current_map_index - 1) % len(self.available_maps)
+                    elif event.key == pygame.K_RIGHT:
+                        self.current_map_index = (self.current_map_index + 1) % len(self.available_maps)
+                else:
+                    # Handle normal editor mode
+                    if event.key == pygame.K_w:
+                        self.mode = "wall"
+                        self.drawing_wall_start = None
+                        self.drawing_gate_start = None
+                        pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
+                        print("Mode: Add Walls")
+                    elif event.key == pygame.K_g:
+                        self.mode = "gate"
+                        self.drawing_wall_start = None
+                        self.drawing_gate_start = None
+                        pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
+                        print("Mode: Add Gates")
+                    elif event.key == pygame.K_p: # 'P' for Start Position
+                        self.mode = "start"
+                        self.drawing_wall_start = None
+                        self.drawing_gate_start = None
+                        pygame.display.set_caption(f"Map Editor - Mode: {self.mode.upper()} (W/G/P/S/L/Z/RMB/Q)")
+                        print("Mode: Set Start Position")
+                    elif event.key == pygame.K_s:
+                        self.show_save_ui = True
+                        self.save_input_text = ""
+                        self.save_input_active = True
+                    elif event.key == pygame.K_l:
+                        self.show_map_selection = True
+                        self.refresh_available_maps()
+                    elif event.key == pygame.K_z: # Undo
+                        self.undo()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pos = self.snap_to_grid(event.pos)
+
+                if self.show_map_selection:
+                    if self.left_arrow_rect.collidepoint(event.pos):
+                        self.current_map_index = (self.current_map_index - 1) % len(self.available_maps)
+                    elif self.right_arrow_rect.collidepoint(event.pos):
+                        self.current_map_index = (self.current_map_index + 1) % len(self.available_maps)
+                    elif self.map_selection_rect.collidepoint(event.pos):
+                        self.load_map(self.available_maps[self.current_map_index])
+                        self.show_map_selection = False
+                    continue
+                elif self.show_save_ui:
+                    if self.save_input_rect.collidepoint(event.pos):
+                        self.save_input_active = True
+                    else:
+                        self.save_input_active = False
+                    continue
 
                 if event.button == 1: # Left Click
                     self.save_state() # Save state before adding
@@ -238,9 +309,69 @@ class Editor:
             current_pos = self.snap_to_grid(pygame.mouse.get_pos())
             pygame.draw.line(self.screen, GREEN, self.drawing_gate_start, current_pos, 1)
 
+    def draw_map_selection(self):
+        """Draw the map selection UI"""
+        # Draw semi-transparent background
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 128))
+        self.screen.blit(s, (0, 0))
+
+        # Draw selection box
+        pygame.draw.rect(self.screen, WHITE, self.map_selection_rect, 2)
+        
+        # Draw arrows
+        pygame.draw.polygon(self.screen, WHITE, [
+            (self.left_arrow_rect.centerx - 10, self.left_arrow_rect.centery),
+            (self.left_arrow_rect.centerx + 10, self.left_arrow_rect.centery - 10),
+            (self.left_arrow_rect.centerx + 10, self.left_arrow_rect.centery + 10)
+        ])
+        pygame.draw.polygon(self.screen, WHITE, [
+            (self.right_arrow_rect.centerx + 10, self.right_arrow_rect.centery),
+            (self.right_arrow_rect.centerx - 10, self.right_arrow_rect.centery - 10),
+            (self.right_arrow_rect.centerx - 10, self.right_arrow_rect.centery + 10)
+        ])
+
+        # Draw map name
+        map_name = self.available_maps[self.current_map_index]
+        map_text = self.big_font.render(map_name, True, WHITE)
+        map_rect = map_text.get_rect(center=self.map_selection_rect.center)
+        self.screen.blit(map_text, map_rect)
+
+        # Draw instructions
+        instr_text = self.font.render("Press ENTER to load, ESC to cancel", True, WHITE)
+        instr_rect = instr_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 40))
+        self.screen.blit(instr_text, instr_rect)
+
+    def draw_save_ui(self):
+        """Draw the save file UI"""
+        # Draw semi-transparent background
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 128))
+        self.screen.blit(s, (0, 0))
+
+        # Draw input box
+        pygame.draw.rect(self.screen, WHITE, self.save_input_rect, 2)
+        if self.save_input_active:
+            pygame.draw.rect(self.screen, (100, 100, 255), self.save_input_rect, 2)
+
+        # Draw input text
+        input_text = self.big_font.render(self.save_input_text, True, WHITE)
+        input_rect = input_text.get_rect(midleft=(self.save_input_rect.left + 10, self.save_input_rect.centery))
+        self.screen.blit(input_text, input_rect)
+
+        # Draw instructions
+        instr_text = self.font.render("Enter filename and press ENTER to save, ESC to cancel", True, WHITE)
+        instr_rect = instr_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 40))
+        self.screen.blit(instr_text, instr_rect)
+
     def draw_ui(self):
-         mode_text = self.font.render(f"Mode: {self.mode.upper()} | (W)all/(G)ate/(P)os | (S)ave/(L)oad | (Z)Undo | RMB:Del | Q:Quit", True, WHITE)
-         self.screen.blit(mode_text, (10, 10))
+        if self.show_map_selection:
+            self.draw_map_selection()
+        elif self.show_save_ui:
+            self.draw_save_ui()
+        else:
+            mode_text = self.font.render(f"Mode: {self.mode.upper()} | (W)all/(G)ate/(P)os | (S)ave/(L)oad | (Z)Undo | RMB:Del | Q:Quit", True, WHITE)
+            self.screen.blit(mode_text, (10, 10))
 
     def run(self):
         while self.running:
@@ -258,43 +389,49 @@ class Editor:
 
     def save_map(self, filename=None):
         if filename is None:
-             filename = input(f"Enter filename to save (default: {FILENAME_DEFAULT}): ") or FILENAME_DEFAULT
+            self.show_save_ui = True
+            self.save_input_text = ""
+            self.save_input_active = True
+            return
+
+        if not filename.endswith('.json'):
+            filename += '.json'
+            
         filepath = os.path.join(MAP_DIR, filename)
         try:
             # Ensure start_pos is set before saving
             if self.elements["start_pos"] is None:
                 print("Error: Start position must be set before saving the map.")
-                # Optionally, prompt the user to set it now or abort saving.
-                # For simplicity here, we'll just prevent saving without it.
-                # You could allow saving without it if your game logic handles a default start.
                 return 
                 
             with open(filepath, 'w') as f:
                 json.dump(self.elements, f, indent=4)
             print(f"Map saved to {filepath}")
+            self.refresh_available_maps()  # Refresh available maps after saving
         except Exception as e:
             print(f"Error saving map: {e}")
 
     def load_map(self, filename=None):
-         if filename is None:
-             filename = input(f"Enter filename to load (default: {FILENAME_DEFAULT}): ") or FILENAME_DEFAULT
-         filepath = os.path.join(MAP_DIR, filename)
-         try:
-             with open(filepath, 'r') as f:
-                 self.save_state() # Save current state before loading
-                 loaded_data = json.load(f)
-                 # Basic validation
-                 if "walls" in loaded_data and "gates" in loaded_data and "start_pos" in loaded_data:
-                     self.elements = loaded_data
-                     # Convert lists back to tuples if needed by Pygame (usually not required for drawing)
-                     # self.elements["walls"] = [tuple(p) for w in loaded_data["walls"] for p in w] # Example if needed
-                     self.drawing_wall_start = None # Reset drawing state
-                     print(f"Map loaded from {filepath}")
-                 else:
-                     print("Error: Invalid map format in file.")
-         except FileNotFoundError:
-             print(f"Error: File not found '{filepath}'")
-         except json.JSONDecodeError:
-             print(f"Error: Could not decode JSON from '{filepath}'")
-         except Exception as e:
-             print(f"Error loading map: {e}")
+        if filename is None:
+            self.show_map_selection = True
+            self.refresh_available_maps()
+            return
+
+        filepath = os.path.join(MAP_DIR, filename)
+        try:
+            with open(filepath, 'r') as f:
+                self.save_state() # Save current state before loading
+                loaded_data = json.load(f)
+                # Basic validation
+                if "walls" in loaded_data and "gates" in loaded_data and "start_pos" in loaded_data:
+                    self.elements = loaded_data
+                    self.drawing_wall_start = None # Reset drawing state
+                    print(f"Map loaded from {filepath}")
+                else:
+                    print("Error: Invalid map format in file.")
+        except FileNotFoundError:
+            print(f"Error: File not found '{filepath}'")
+        except json.JSONDecodeError:
+            print(f"Error: Could not decode JSON from '{filepath}'")
+        except Exception as e:
+            print(f"Error loading map: {e}")
