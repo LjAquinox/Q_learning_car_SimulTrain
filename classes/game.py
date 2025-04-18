@@ -22,6 +22,11 @@ class Game:
         self.car = Car(self.start_pos[0], self.start_pos[1])
         self.show_rays = True # Toggle ray display with 'R'
         self.game_over = False
+        
+        # Restart button properties
+        self.restart_button = pygame.Rect(WIDTH//2 - 50, HEIGHT//2 + 30, 100, 40)
+        self.restart_text = self.font.render("Restart", True, WHITE)
+        self.restart_text_rect = self.restart_text.get_rect(center=self.restart_button.center)
 
     def load_map(self, filename):
         filepath = os.path.join(MAP_DIR, filename)
@@ -80,6 +85,9 @@ class Game:
                       map_name = input("Enter map filename to load: ")
                       if map_name:
                           self.load_map(map_name)
+             if event.type == pygame.MOUSEBUTTONDOWN and self.game_over:
+                 if self.restart_button.collidepoint(event.pos):
+                     self.reset_game()
 
     def update(self, dt):
         if self.game_over:
@@ -97,7 +105,14 @@ class Game:
 
         if self.car.check_collision_with_elements(self.gates):
             print("Gate collision!")
-            self.game_over = True # Stop the game on collision for now
+            #self.game_over = True # Stop the game on collision for now
+
+    def reset_game(self):
+        """Reset the game state to start a new game"""
+        self.car.pos = pygame.Vector2(self.start_pos)
+        self.car.vel = pygame.Vector2(0, 0)
+        self.car.angle = 0
+        self.game_over = False
 
     def draw(self):
         self.screen.fill(BLACK)
@@ -123,9 +138,15 @@ class Game:
         self.screen.blit(speed_text, (10, 10))
 
         if self.game_over:
+            # Draw game over text
             go_text = self.font.render("GAME OVER (Collision)", True, RED)
-            go_rect = go_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+            go_rect = go_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))
             self.screen.blit(go_text, go_rect)
+            
+            # Draw restart button
+            pygame.draw.rect(self.screen, GREEN, self.restart_button)
+            pygame.draw.rect(self.screen, WHITE, self.restart_button, 2)  # White border
+            self.screen.blit(self.restart_text, self.restart_text_rect)
 
         pygame.display.flip()
 
