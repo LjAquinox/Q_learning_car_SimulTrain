@@ -31,6 +31,16 @@ class Car:
         self.ray_distances = [self.ray_length] * self.num_rays
         self.rays_end_points = [(0,0)] * self.num_rays # For display
 
+        # Load and process car image
+        self.car_image = pygame.image.load("car.png")
+        self.car_image = pygame.transform.scale(self.car_image, (self.height, self.width))
+        # Convert white to transparent
+        for x in range(self.car_image.get_width()):
+            for y in range(self.car_image.get_height()):
+                color = self.car_image.get_at((x, y))
+                if color[0] > 240 and color[1] > 240 and color[2] > 240:  # Check if pixel is close to white
+                    self.car_image.set_at((x, y), (255, 255, 255, 0))  # Set fully transparent
+
     def get_state(self):
         """ Returns the current state for the Q-learning agent.
             For now, just the ray distances.
@@ -161,8 +171,12 @@ class Car:
             x_rot = x * math.cos(self.angle) - y * math.sin(self.angle)
             y_rot = x * math.sin(self.angle) + y * math.cos(self.angle)
             rotated_points.append((self.pos.x + x_rot, self.pos.y + y_rot))
-
-        pygame.draw.polygon(screen, self.color, rotated_points)
+        
+        # Only rotate the pre-processed image
+        rotated_car = pygame.transform.rotate(self.car_image, -self.angle * 180 / math.pi)
+        car_rect = rotated_car.get_rect(center=self.pos)
+        screen.blit(rotated_car, car_rect)
+        
         # Draw a line to indicate the front
         front_point = self.pos + pygame.Vector2(math.cos(self.angle), math.sin(self.angle)) * (self.height / 2)
         pygame.draw.line(screen, WHITE, self.pos, front_point, 2)
