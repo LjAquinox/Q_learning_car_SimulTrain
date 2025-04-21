@@ -2,7 +2,7 @@
 
 # Screen dimensions
 WIDTH, HEIGHT = 800, 600
-FPS = 60
+FPS = 600
 
 # Colors
 WHITE = (255, 255, 255)

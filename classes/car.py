@@ -13,6 +13,7 @@ class Car:
         self.color = BLUE
 
         # Physics
+        self.min_speed = 0.3
         self.max_speed = 5.0
         self.acceleration = 0.1
         self.brake_power = 0.1
@@ -30,6 +31,11 @@ class Car:
         self.ray_spread = math.pi * 1.5 # Total angle covered by rays (e.g., 270 degrees)
         self.ray_distances = [self.ray_length] * self.num_rays
         self.rays_end_points = [(0,0)] * self.num_rays # For display
+
+        self.distance_start = 0
+        self.distance_end = 0
+        self.relative_angle_start = 0
+        self.relative_angle_end = 0
 
         # Load and process car image
         self.car_image = pygame.image.load("car.png")
@@ -51,88 +57,53 @@ class Car:
         """
         # Get ray distances
         ray_distances = self.ray_distances
-        
-        # Get next gate info
-        if hasattr(self, 'gates') and hasattr(self, 'current_gate_index'):
-            distance_start, angle_start, distance_end, angle_end = self.get_next_gate_info(self.gates, self.current_gate_index)
-            # Normalize angles to 0-1 (-pi to pi becomes 0 to 1)
-            angle_start = (angle_start + math.pi) / (2 * math.pi)
-            angle_end = (angle_end + math.pi) / (2 * math.pi)
-        else:
-            distance_start, angle_start, distance_end, angle_end = 0, 0, 0, 0
-            
+        distance_start = self.distance_start
+        relative_angle_start = (self.relative_angle_start + math.pi) / (2 * math.pi)
+        distance_end = self.distance_end
+        relative_angle_end = (self.relative_angle_end + math.pi) / (2 * math.pi)
+
         # Get and normalize some car properties
-        speed = self.vel.length() / self.max_speed  # Normalize speed
-        vel_x = self.vel.x / self.max_speed  # Normalize x velocity
-        vel_y = self.vel.y / self.max_speed  # Normalize y velocity
+        speed = (self.vel.length() - self.min_speed) / (self.max_speed - self.min_speed)  # Normalize speed
+        vel_x = (self.vel.x - self.min_speed) / (self.max_speed - self.min_speed)  # Normalize x velocity
+        vel_y = (self.vel.y - self.min_speed) / (self.max_speed - self.min_speed)  # Normalize y velocity
         angle = (self.angle + math.pi) / (2 * math.pi)  # Normalize angle to 0-1
         
         # Combine all state information
         state = (
             *ray_distances,  # Unpack raw ray distances idk how to properly normalize them
-            distance_start, angle_start, distance_end, angle_end,  # Next gate info
+            distance_start, relative_angle_start, distance_end, relative_angle_end,  # Next gate info
             speed, vel_x, vel_y,  # Velocity info
             angle  # Car's angle
         )
-        
+        #print(state)
         return state
 
-    def get_next_gate_info(self, gates, current_gate_index):
-        """Calculate the relative position of the next gate to the car.
-            Returns (distance, angle) where angle is relative to car's direction for
-            both start and end of the gate.
-            Angle is in radians, positive means gate is to the right of car's direction.
-        """
-        if not gates or current_gate_index >= len(gates):
-            return (0, 0)  # No gate to track
-            
-        # Get the center point of the next gate
-        gate = gates[current_gate_index]
-        
-        # Calculate vector from car to gate
-        to_gate_start = pygame.Vector2(gate[0]) - self.pos
-        to_gate_end = pygame.Vector2(gate[1]) - self.pos
-        
-        # Calculate distance
-        distance_start = to_gate_start.length()
-        distance_end = to_gate_end.length()
-        
-        # Calculate angle relative to car's direction
-        # First get the angle of the vector to gate
-        gate_angle_start = math.atan2(to_gate_start.y, to_gate_start.x)
-        gate_angle_end = math.atan2(to_gate_end.y, to_gate_end.x)
-        # Then subtract car's angle to get relative angle
-        relative_angle_start = gate_angle_start - self.angle
-        relative_angle_end = gate_angle_end - self.angle
-        # Normalize angle to [-pi, pi]
-        relative_angle_start = (relative_angle_start + math.pi) % (2 * math.pi) - math.pi
-        relative_angle_end = (relative_angle_end + math.pi) % (2 * math.pi) - math.pi
-        
-        return distance_start, relative_angle_start, distance_end, relative_angle_end
 
     def update(self, dt):
         # 1. Apply friction
-        if self.vel.length() > 0:
+
+        direction = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
+
+        if self.vel.length() > self.min_speed:
             friction_force = self.vel.normalize() * self.friction
             
             # Ensure friction doesn't reverse velocity
             if self.vel.length() > friction_force.length() * dt :
                  self.vel -= friction_force * dt
             else:
-                 self.vel = pygame.Vector2(0, 0)
+                 self.vel = pygame.Vector2(0, 0) + self.min_speed * direction
         
         # 2. Apply acceleration / braking
-        direction = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
         if self.accelerating:
             self.vel += direction * self.acceleration * dt
         if self.braking:
              # Braking is more effective at reducing current speed
-             if self.vel.length() > 0: 
+             if self.vel.length() > self.min_speed: 
                  brake_force = self.vel.normalize() * self.brake_power
                  if self.vel.length() > brake_force.length() * dt:
                       self.vel -= brake_force * dt
                  else:
-                      self.vel = pygame.Vector2(0,0)
+                      self.vel = pygame.Vector2(0,0) + self.min_speed * direction
 
         # 3. Limit speed
         if self.vel.length() > self.max_speed:
@@ -178,6 +149,39 @@ class Car:
 
             self.ray_distances.append(closest_dist)
             self.rays_end_points.append(actual_ray_end)
+
+    def set_next_gate_info(self, gates, current_gate_index):
+        """Calculate the relative position of the next gate to the car.
+            Returns (distance, angle) where angle is relative to car's direction for
+            both start and end of the gate. angle is 0 to 1
+        """
+        if not gates or current_gate_index >= len(gates):
+            return (0, 0)  # No gate to track
+            
+        gate = gates[current_gate_index]
+        
+        # Calculate vector from car to gate
+        to_gate_start = pygame.Vector2(gate[0]) - self.pos
+        to_gate_end = pygame.Vector2(gate[1]) - self.pos
+        
+        # Calculate distance
+        self.distance_start = to_gate_start.length()
+        self.distance_end = to_gate_end.length()
+        
+        # Calculate angle relative to car's direction
+        # First get the angle of the vector to gate
+        gate_angle_start = math.atan2(to_gate_start.y, to_gate_start.x)
+        gate_angle_end = math.atan2(to_gate_end.y, to_gate_end.x)
+        # Then subtract car's angle to get relative angle
+        relative_angle_start = gate_angle_start - self.angle
+        relative_angle_end = gate_angle_end - self.angle
+        # Normalize angle to [-pi, pi]
+        relative_angle_start = (relative_angle_start + math.pi) % (2 * math.pi) - math.pi
+        relative_angle_end = (relative_angle_end + math.pi) % (2 * math.pi) - math.pi
+        
+        self.relative_angle_start = relative_angle_start
+        self.relative_angle_end = relative_angle_end
+        
 
     def check_collision_with_elements(self, elements):
         """ Checks simple collision of the car with walls.
