@@ -25,7 +25,7 @@ class Car:
         self.steering = 0 # -1 left, 0 straight, 1 right
 
         # Raycasting
-        self.num_rays = 9 # Number of rays
+        self.num_rays = 15 # Number of rays
         self.ray_length = 800 # Maximum ray length
         self.ray_spread = math.pi * 1.5 # Total angle covered by rays (e.g., 270 degrees)
         self.ray_distances = [self.ray_length] * self.num_rays
@@ -43,10 +43,39 @@ class Car:
 
     def get_state(self):
         """ Returns the current state for the Q-learning agent.
-            For now, just the ray distances.
-            Could include speed, angle, etc. later.
+            Returns a tuple containing:
+            - Ray distances (list of floats)
+            - Next gate distance and angle (4 floats: distance_start, angle_start, distance_end, angle_end)
+            - Car's speed (float)
+            - Car's angle (float)
         """
-        return self.ray_distances # + other info if needed
+        # Get ray distances
+        ray_distances = self.ray_distances
+        
+        # Get next gate info
+        if hasattr(self, 'gates') and hasattr(self, 'current_gate_index'):
+            distance_start, angle_start, distance_end, angle_end = self.get_next_gate_info(self.gates, self.current_gate_index)
+            # Normalize angles to 0-1 (-pi to pi becomes 0 to 1)
+            angle_start = (angle_start + math.pi) / (2 * math.pi)
+            angle_end = (angle_end + math.pi) / (2 * math.pi)
+        else:
+            distance_start, angle_start, distance_end, angle_end = 0, 0, 0, 0
+            
+        # Get and normalize some car properties
+        speed = self.vel.length() / self.max_speed  # Normalize speed
+        vel_x = self.vel.x / self.max_speed  # Normalize x velocity
+        vel_y = self.vel.y / self.max_speed  # Normalize y velocity
+        angle = (self.angle + math.pi) / (2 * math.pi)  # Normalize angle to 0-1
+        
+        # Combine all state information
+        state = (
+            *ray_distances,  # Unpack raw ray distances idk how to properly normalize them
+            distance_start, angle_start, distance_end, angle_end,  # Next gate info
+            speed, vel_x, vel_y,  # Velocity info
+            angle  # Car's angle
+        )
+        
+        return state
 
     def get_next_gate_info(self, gates, current_gate_index):
         """Calculate the relative position of the next gate to the car.
