@@ -11,6 +11,7 @@ RED = (255, 0, 0)    # Walls
 GREEN = (0, 255, 0)  # Gates
 BLUE = (100, 100, 255) # Car
 YELLOW = (255, 255, 0) # Rays
+CYAN = (0, 255, 255)  # Gate rays
 
 # Map configuration
 MAP_DIR = "maps"

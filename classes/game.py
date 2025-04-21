@@ -1,6 +1,7 @@
 import pygame
 import json
 import os
+import math
 from config import *
 from classes.car import Car
 
@@ -131,6 +132,18 @@ class Game:
         self.gate_passed = False
         self.score = 0
 
+    def draw_gate_rays(self):
+        """Draw rays from the car to the start and end points of the next gate."""
+        if self.gates and self.current_gate_index < len(self.gates):
+            distance_start, angle_start, distance_end, angle_end = self.car.get_next_gate_info(self.gates, self.current_gate_index)
+            # Calculate end points of the rays
+            start_ray_end = self.car.pos + pygame.Vector2(math.cos(self.car.angle + angle_start), math.sin(self.car.angle + angle_start)) * distance_start
+            end_ray_end = self.car.pos + pygame.Vector2(math.cos(self.car.angle + angle_end), math.sin(self.car.angle + angle_end)) * distance_end
+            
+            # Draw the rays in a different color (using CYAN)
+            pygame.draw.line(self.screen, CYAN, self.car.pos, start_ray_end, 2)
+            pygame.draw.line(self.screen, CYAN, self.car.pos, end_ray_end, 2)
+
     def draw(self):
         self.screen.fill(BLACK)
 
@@ -155,6 +168,7 @@ class Game:
         if self.show_rays:
             self.car.draw_rays(self.screen)
             self.car.draw_rays_distances(self.screen, self.font)
+            self.draw_gate_rays()
             
         # Draw game state info
         speed_text = self.font.render(f"Speed: {self.car.vel.length():.1f}", True, WHITE)
@@ -164,6 +178,15 @@ class Game:
         score_text = self.font.render(f"Score: {self.score} | Next Gate: {self.current_gate_index + 1}/{len(self.gates)}", True, WHITE)
         score_rect = score_text.get_rect(topright=(WIDTH - 10, 10))
         self.screen.blit(score_text, score_rect)
+
+        # Draw next gate info
+        if self.gates and self.current_gate_index < len(self.gates):
+            distance_start, angle_start, distance_end, angle_end = self.car.get_next_gate_info(self.gates, self.current_gate_index)
+            angle_deg_start = math.degrees(angle_start)
+            angle_deg_end = math.degrees(angle_end)
+            gate_info = self.font.render(f"Next Gate: {distance_start:.1f} units, {angle_deg_start:.1f}°, and {distance_end:.1f} units, {angle_deg_end:.1f}°", True, WHITE)
+            gate_rect = gate_info.get_rect(topright=(WIDTH - 10, 40))
+            self.screen.blit(gate_info, gate_rect)
 
         if self.game_over:
             # Draw game over text

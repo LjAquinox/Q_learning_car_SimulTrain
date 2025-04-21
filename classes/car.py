@@ -48,6 +48,39 @@ class Car:
         """
         return self.ray_distances # + other info if needed
 
+    def get_next_gate_info(self, gates, current_gate_index):
+        """Calculate the relative position of the next gate to the car.
+            Returns (distance, angle) where angle is relative to car's direction for
+            both start and end of the gate.
+            Angle is in radians, positive means gate is to the right of car's direction.
+        """
+        if not gates or current_gate_index >= len(gates):
+            return (0, 0)  # No gate to track
+            
+        # Get the center point of the next gate
+        gate = gates[current_gate_index]
+        
+        # Calculate vector from car to gate
+        to_gate_start = pygame.Vector2(gate[0]) - self.pos
+        to_gate_end = pygame.Vector2(gate[1]) - self.pos
+        
+        # Calculate distance
+        distance_start = to_gate_start.length()
+        distance_end = to_gate_end.length()
+        
+        # Calculate angle relative to car's direction
+        # First get the angle of the vector to gate
+        gate_angle_start = math.atan2(to_gate_start.y, to_gate_start.x)
+        gate_angle_end = math.atan2(to_gate_end.y, to_gate_end.x)
+        # Then subtract car's angle to get relative angle
+        relative_angle_start = gate_angle_start - self.angle
+        relative_angle_end = gate_angle_end - self.angle
+        # Normalize angle to [-pi, pi]
+        relative_angle_start = (relative_angle_start + math.pi) % (2 * math.pi) - math.pi
+        relative_angle_end = (relative_angle_end + math.pi) % (2 * math.pi) - math.pi
+        
+        return distance_start, relative_angle_start, distance_end, relative_angle_end
+
     def update(self, dt):
         # 1. Apply friction
         if self.vel.length() > 0:
