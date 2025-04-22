@@ -4,6 +4,8 @@ import os
 import math
 from config import *
 from classes.car import Car
+import numpy as np
+import torch
 
 class Game:
     def __init__(self):
@@ -15,6 +17,7 @@ class Game:
         self.running = True
 
         self.walls = []
+        self.wall_vectors = np.zeros((1, 2, 2)) #we don't know how many walls there are yet
         self.gates = []
         self.start_pos = (WIDTH // 2, HEIGHT // 2) # Default if map has no start_pos
 
@@ -34,6 +37,8 @@ class Game:
         self.restart_text = self.font.render("Restart", True, WHITE)
         self.restart_text_rect = self.restart_text.get_rect(center=self.restart_button.center)
 
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     def load_map(self, filename):
         filepath = os.path.join(MAP_DIR, filename)
         try:
@@ -46,9 +51,20 @@ class Game:
                 if loaded_start_pos:
                     self.start_pos = tuple(loaded_start_pos) 
                 else:
-                     print(f"Warning: No start position found in map '{filename}'. Using default.")
+                     print(f"Warning: No start position found in map '{filename}'. Using default {self.start_pos}.")
                      # Use the default value already defined
-                
+                # Pre-calculate wall vectors
+                self.wall_vectors = np.zeros((len(self.walls), 2, 2))
+                for i, wall in enumerate(self.walls):
+                    self.wall_vectors[i] = np.array([wall[0], wall[1]])
+
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                # p3 = shape (M,2), p4 = shape (M,2)
+                self.wall_p1_t = torch.as_tensor(self.wall_vectors[:,0,:], dtype=torch.float32, device=self.device)  # shape (M,2)
+                self.wall_p2_t = torch.as_tensor(self.wall_vectors[:,1,:], dtype=torch.float32, device=self.device)  # shape (M,2)
+                # Pre‑compute of vector s = p4 − p3
+                self.wall_s    = self.wall_p2_t - self.wall_p1_t                                       # shape (M,2)
+
                 print(f"Map '{filename}' loaded successfully.")
                 # Reset car position if map is loaded after init
                 if hasattr(self, 'car'):
@@ -103,7 +119,7 @@ class Game:
              return
 
         self.car.update(dt)
-        self.car.cast_rays(self.walls)
+        self.car.cast_rays(self.wall_vectors)
         self.car.set_next_gate_info(self.gates, self.current_gate_index)
 
         # Check collision with walls
@@ -133,7 +149,7 @@ class Game:
         self.gate_passed = False
         self.score = 0
         self.car.set_next_gate_info(self.gates, self.current_gate_index)
-        self.car.cast_rays(self.walls)
+        self.car.cast_rays(self.wall_vectors)
 
 
     def draw_gate_rays(self):

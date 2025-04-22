@@ -1,23 +1,44 @@
-import pygame
+import torch
 
-# --- Helper Functions ---
-def line_segment_intersection(p1, p2, p3, p4):
-    """ Finds the intersection point between segments [p1, p2] and [p3, p4].
-        Returns the intersection point (Vector2) or None if no intersection.
+def line_segment_intersection_torch(p1, p2, p3, s):
     """
-    x1, y1 = p1
-    x2, y2 = p2
-    x3, y3 = p3
-    x4, y4 = p4
+    p1 : (N,2) tensor, origine des rays
+    p2 : (N,2) tensor, extrémité théorique des rays
+    p3 : (M,2) tensor, origine des murs
+    s  : (M,2) tensor, vecteurs murs (p4 − p3)
+    ---
+    renvoie : intersections (N,2) tensor, ou zeros si pas de hit
+    """
+    # Device
+    device = p1.device
 
-    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if den == 0:
-        return None  # Parallel lines
+    # Ray direction
+    r = p2 - p1                           # (N,2)
+    # broadcast N×M
+    r_b = r.unsqueeze(1)                 # (N,1,2)
+    s_b = s.unsqueeze(0)                 # (1,M,2)
+    p1_b = p1.unsqueeze(1)               # (N,1,2)
+    p3_b = p3.unsqueeze(0)               # (1,M,2)
 
-    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
-    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den
+    # compute denominator
+    denom = r_b[...,0]*s_b[...,1] - r_b[...,1]*s_b[...,0]    # (N,M)
+    qp    = p3_b - p1_b                                      # (N,M,2)
 
-    if 0 <= t <= 1 and 0 <= u <= 1:
-        intersection_point = pygame.Vector2(x1 + t * (x2 - x1), y1 + t * (y2 - y1))
-        return intersection_point
-    return None
+    # compute parameters t and u
+    t = (qp[...,0]*s_b[...,1] - qp[...,1]*s_b[...,0]) / denom
+    u = (qp[...,0]*r_b[...,1] - qp[...,1]*r_b[...,0]) / denom
+
+    # valid mask
+    valid = (denom.abs() > 1e-8) & (t>=0) & (t<=1) & (u>=0) & (u<=1)  # (N,M)
+    # replace invalid by +inf
+    t_mask = torch.where(valid, t, torch.full_like(t, float('inf')))
+    # smallest t per ray
+    t_min, _ = t_mask.min(dim=1)    # (N,)
+
+    # compute intersections
+    inter = p1 + r * t_min.unsqueeze(1)   # (N,2)
+    mask_hit = ~torch.isinf(t_min)
+    # zero if no hit
+    inter[~mask_hit] = 0.0
+
+    return inter

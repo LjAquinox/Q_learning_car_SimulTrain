@@ -22,14 +22,14 @@ class TrainingEnvironment:
         
         # Reward for passing gates
         if self.game.gate_passed:
-            reward += 1000
+            reward += 10
             
         # Penalty for collisions
         if self.game.game_over:
-            reward -= 1000
+            reward -= 10
             
         # Reward for speed  
-        reward += self.game.car.vel.length()**2 * 0.1
+        reward += self.game.car.vel.length() * 0.01
         """
         # Penalty for being too far from next gate
         if self.game.gates and self.game.current_gate_index < len(self.game.gates):

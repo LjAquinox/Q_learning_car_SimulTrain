@@ -2,7 +2,7 @@ import pygame
 import math
 from config import *
 from classes.helpers import line_segment_intersection
-
+import numpy as np
 class Car:
     def __init__(self, x, y):
         self.pos = pygame.Vector2(x, y)
@@ -29,8 +29,8 @@ class Car:
         self.num_rays = 15 # Number of rays
         self.ray_length = 800 # Maximum ray length
         self.ray_spread = math.pi * 1.5 # Total angle covered by rays (e.g., 270 degrees)
-        self.ray_distances = [self.ray_length] * self.num_rays
-        self.rays_end_points = [(0,0)] * self.num_rays # For display
+        self.ray_distances = np.ones(self.num_rays) * self.ray_length
+        self.rays_end_points = np.zeros((self.num_rays, 2)) # For display
 
         self.distance_start = 0
         self.distance_end = 0
@@ -57,6 +57,8 @@ class Car:
         """
         # Get ray distances
         ray_distances = self.ray_distances
+        #normalize ray distances
+        ray_distances = ray_distances / self.ray_length
         distance_start = self.distance_start
         relative_angle_start = (self.relative_angle_start + math.pi) / (2 * math.pi)
         distance_end = self.distance_end
@@ -70,7 +72,7 @@ class Car:
         
         # Combine all state information
         state = (
-            *ray_distances,  # Unpack raw ray distances idk how to properly normalize them
+            *ray_distances,
             distance_start, relative_angle_start, distance_end, relative_angle_end,  # Next gate info
             speed, vel_x, vel_y,  # Velocity info
             angle  # Car's angle
@@ -120,36 +122,22 @@ class Car:
         # 5. Update position
         self.pos += self.vel * dt
 
-    def cast_rays(self, walls):
+    def cast_rays(self, wall_array):
         """ Casts rays from the car and calculates distances to walls. """
-        self.ray_distances = []
-        self.rays_end_points = [] # Clear previous endpoints for drawing
-
         start_angle = self.angle - self.ray_spread / 2
+        
+        # Pre-calculate ray directions for all rays
+        ray_directions = np.zeros((self.num_rays, 2))
+        angles = np.linspace(start_angle, start_angle + self.ray_spread, self.num_rays)
+        ray_directions[:, 0] = np.cos(angles)
+        ray_directions[:, 1] = np.sin(angles)
+        ray_end_theoretical = self.pos + ray_directions * self.ray_length
 
-        for i in range(self.num_rays):
-            ray_angle = start_angle + i * (self.ray_spread / (self.num_rays - 1)) if self.num_rays > 1 else self.angle
+        # Cast rays
+        ray_start = np.array([self.pos] * self.num_rays)
+        self.rays_end_points = line_segment_intersection(ray_start, ray_end_theoretical, wall_array[:,0], wall_array[:,1])
+        self.ray_distances = np.linalg.norm(self.rays_end_points - self.pos, axis=1) # shape (num_rays,)
             
-            ray_dir = pygame.Vector2(math.cos(ray_angle), math.sin(ray_angle))
-            ray_end_theoretical = self.pos + ray_dir * self.ray_length
-
-            closest_dist = self.ray_length
-            actual_ray_end = ray_end_theoretical
-
-            for wall in walls:
-                p3 = pygame.Vector2(wall[0])
-                p4 = pygame.Vector2(wall[1])
-                intersection = line_segment_intersection(self.pos, ray_end_theoretical, p3, p4)
-
-                if intersection:
-                    dist = (intersection - self.pos).length()
-                    if dist < closest_dist:
-                        closest_dist = dist
-                        actual_ray_end = intersection # Update endpoint to the actual hit point
-
-            self.ray_distances.append(closest_dist)
-            self.rays_end_points.append(actual_ray_end)
-
     def set_next_gate_info(self, gates, current_gate_index):
         """Calculate the relative position of the next gate to the car.
             Returns (distance, angle) where angle is relative to car's direction for
@@ -184,44 +172,43 @@ class Car:
         
 
     def check_collision_with_elements(self, elements):
-        """ Checks simple collision of the car with walls.
-            Returns True if collision, False otherwise.
-            Uses a simplified oriented rectangle.
         """
-        # Create a collision rectangle aligned with the car
-        car_rect = pygame.Rect(0, 0, self.height, self.width) # Note: height/width swapped to match direction 0
+        Checks collision of the oriented car rectangle against wall segments.
+        Returns True if any segment intersects.
+        """
+        # 1) Build the un‑rotated corners array (4×2)
+        car_rect = pygame.Rect(0, 0, self.height, self.width)
         car_rect.center = self.pos
+        corners = np.array([
+            car_rect.topleft,
+            car_rect.topright,
+            car_rect.bottomright,
+            car_rect.bottomleft,
+        ], dtype=float)  # shape (4,2)
 
-        # Points of the non-rotated rectangle
-        points = [car_rect.topleft, car_rect.topright, car_rect.bottomright, car_rect.bottomleft]
+        # 2) Build rotation matrix
+        cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
+        R = np.array([[ cos_a, -sin_a],
+                    [ sin_a,  cos_a]])        # shape (2,2)
 
-        # Rotate points around the car's center
-        center = pygame.Vector2(self.pos)
-        cos_a = math.cos(self.angle)
-        sin_a = math.sin(self.angle)
-        rotated_points = []
-        for p in points:
-            p_vec = pygame.Vector2(p) - center
-            x_new = p_vec.x * cos_a - p_vec.y * sin_a
-            y_new = p_vec.x * sin_a + p_vec.y * cos_a
-            rotated_points.append(center + pygame.Vector2(x_new, y_new))
+        # 3) Rotate all corners at once around center
+        center = np.array(self.pos, dtype=float)  # shape (2,)
+        rotated = (corners - center) @ R.T + center  # shape (4,2)
 
-        # Segments of the car's collision rectangle
-        car_segments = [
-            (rotated_points[0], rotated_points[1]),
-            (rotated_points[1], rotated_points[2]),
-            (rotated_points[2], rotated_points[3]),
-            (rotated_points[3], rotated_points[0]),
-        ]
+        # 4) Build segment endpoints arrays for the 4 edges
+        car_p1 = rotated
+        car_p2 = np.roll(rotated, -1, axis=0)       # shifts rows so 4→1
 
-        # Check intersection of each car segment with each wall
-        for car_seg_start, car_seg_end in car_segments:
-            for elem in elements:
-                elem_start = pygame.Vector2(elem[0])
-                elem_end = pygame.Vector2(elem[1])
-                if line_segment_intersection(car_seg_start, car_seg_end, elem_start, elem_end):
-                    return True # Collision detected
-        return False # No collision
+        # 5) Walls into arrays
+        wall_p1 = np.array([e[0] for e in elements], dtype=float)
+        wall_p2 = np.array([e[1] for e in elements], dtype=float)
+
+        # 6) Vectorized intersection test
+        hits = line_segment_intersection(car_p1, car_p2, wall_p1, wall_p2)
+        # hits[i] is [0,0] if car edge i missed all walls
+
+        # 7) If any edge hit a wall, collision!
+        return np.any(np.any(hits != 0, axis=1))
     
 
     def draw(self, screen):
