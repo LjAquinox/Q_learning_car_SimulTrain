@@ -258,7 +258,7 @@ class Car:
     def draw_rays(self, screen):
          # Draw rays (for debug)
          for end_point in self.rays_end_points:
-              pygame.draw.line(screen, YELLOW, self.pos, end_point, 1)
+              pygame.draw.line(screen, YELLOW, self.pos, pygame.Vector2(end_point[0], end_point[1]), 1)
 
     def draw_rays_distances(self, screen, game_font):
         # Draw ray distances (for debug)
