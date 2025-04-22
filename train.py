@@ -1,11 +1,9 @@
 import numpy as np
-import time
-from line_profiler import LineProfiler
 from classes.q_agent import QAgent
 from classes.training_env import TrainingEnvironment
 import os
 
-def train(num_episodes=5, batch_size=64):
+def train(num_episodes=500, batch_size=16):
     
     # Create environment
     env = TrainingEnvironment()

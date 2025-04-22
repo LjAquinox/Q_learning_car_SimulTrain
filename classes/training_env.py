@@ -6,6 +6,7 @@ import pygame
 import os
 from config import *
 
+
 class TrainingEnvironment:
     def __init__(self, map_name=DEFAULT_MAP):
         self.map_name = map_name
@@ -13,22 +14,22 @@ class TrainingEnvironment:
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         pygame.display.set_mode((1, 1))
         pygame.init()
-        
+
         self.game = Game()
         self.game.load_map(self.map_name)
-            
+
     def _calculate_reward(self):
         reward = 0
-        
+
         # Reward for passing gates
         if self.game.gate_passed:
             reward += 10
-            
+
         # Penalty for collisions
         if self.game.game_over:
             reward -= 10
-            
-        # Reward for speed  
+
+        # Reward for speed
         reward += self.game.car.vel.length() * 0.01
         """
         # Penalty for being too far from next gate
@@ -38,7 +39,7 @@ class TrainingEnvironment:
             reward -= (distance_start + distance_end) * 0.01
         """
         return reward
-        
+
     def step(self, action):
         # Convert action to car controls
         # Action space: 0=no action, 1=accelerate forward, 2=brake, 3=left, 4=right, 5 = accelerate and left, 6 = accelerate and right
@@ -71,20 +72,20 @@ class TrainingEnvironment:
                 self.game.car.accelerating = True
                 self.game.car.braking = False
                 self.game.car.steering = 1
-        
+
         # Update game state
-        self.game.update(1/60)  # Assuming 60 FPS
-        
+        self.game.update(1 / 60)  # Assuming 60 FPS
+
         # Get new state and reward
         state = self.game.car.get_state()
         reward = self._calculate_reward()
         done = self.game.game_over
-        
+
         return state, reward, done
-        
+
     def reset(self):
         self.game.reset_game()
         return self.game.car.get_state()
-        
+
     def close(self):
         pygame.quit() 

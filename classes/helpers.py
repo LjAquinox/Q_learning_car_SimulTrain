@@ -1,6 +1,6 @@
 import torch
 
-def line_segment_intersection_torch(p1, p2, p3, s):
+def line_segment_intersection(p1, p2, p3, s):
     """
     p1 : (N,2) tensor, origine des rays
     p2 : (N,2) tensor, extrémité théorique des rays

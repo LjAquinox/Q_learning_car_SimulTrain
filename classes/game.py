@@ -21,11 +21,11 @@ class Game:
         self.gates = []
         self.start_pos = (WIDTH // 2, HEIGHT // 2) # Default if map has no start_pos
 
-        self.load_map(DEFAULT_MAP) # Load the default map
-
         self.car = Car(self.start_pos[0], self.start_pos[1])
-        self.show_rays = True # Toggle ray display with 'R'
+        self.show_rays = True  # Toggle ray display with 'R'
         self.game_over = False
+
+        self.load_map(DEFAULT_MAP) # Load the default map
         
         # Gate tracking
         self.current_gate_index = 0  # Index of the next gate to pass
@@ -38,6 +38,7 @@ class Game:
         self.restart_text_rect = self.restart_text.get_rect(center=self.restart_button.center)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.car.device = self.device
 
     def load_map(self, filename):
         filepath = os.path.join(MAP_DIR, filename)
@@ -75,6 +76,7 @@ class Game:
                     self.current_gate_index = 0  # Reset gate tracking
                     self.gate_passed = False
                     self.score = 0
+                    self.car.set_wall_tensors(self.wall_p1_t, self.wall_s, self.device)
 
         except FileNotFoundError:
             print(f"Error: Map file not found '{filepath}'. Using empty map.")
@@ -119,7 +121,7 @@ class Game:
              return
 
         self.car.update(dt)
-        self.car.cast_rays(self.wall_vectors)
+        self.car.cast_rays()
         self.car.set_next_gate_info(self.gates, self.current_gate_index)
 
         # Check collision with walls
@@ -149,7 +151,7 @@ class Game:
         self.gate_passed = False
         self.score = 0
         self.car.set_next_gate_info(self.gates, self.current_gate_index)
-        self.car.cast_rays(self.wall_vectors)
+        self.car.cast_rays()
 
 
     def draw_gate_rays(self):

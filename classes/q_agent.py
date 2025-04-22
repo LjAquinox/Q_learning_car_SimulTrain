@@ -7,17 +7,19 @@ import torch.optim as optim
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size):
         super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_size, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, action_size)
+        self.fc1 = nn.Linear(state_size, 32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.fc4 = nn.Linear(32, action_size)
         
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+        x = torch.relu(self.fc3(x))
+        return self.fc4(x)
 
 class QAgent:
-    def __init__(self, state_size, action_size, learning_rate=0.0001, gamma=0.95, epsilon=0.5, epsilon_min=0.01, epsilon_decay=0.95, memory_size=3000):
+    def __init__(self, state_size, action_size, learning_rate=0.00001, gamma=0.95, epsilon=0.5, epsilon_min=0.01, epsilon_decay=0.95, memory_size=3000):
         self.state_size = state_size
         self.action_size = action_size
         self.memory_size = memory_size

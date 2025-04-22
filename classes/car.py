@@ -3,6 +3,7 @@ import math
 from config import *
 from classes.helpers import line_segment_intersection
 import numpy as np
+import torch
 class Car:
     def __init__(self, x, y):
         self.pos = pygame.Vector2(x, y)
@@ -46,6 +47,11 @@ class Car:
                 color = self.car_image.get_at((x, y))
                 if color[0] > 240 and color[1] > 240 and color[2] > 240:  # Check if pixel is close to white
                     self.car_image.set_at((x, y), (255, 255, 255, 0))  # Set fully transparent
+
+    def set_wall_tensors(self, wall_p1_t, wall_s, device):
+        self.wall_p1_t = wall_p1_t
+        self.wall_s = wall_s
+        self.device = device
 
     def get_state(self):
         """ Returns the current state for the Q-learning agent.
@@ -122,21 +128,34 @@ class Car:
         # 5. Update position
         self.pos += self.vel * dt
 
-    def cast_rays(self, wall_array):
-        """ Casts rays from the car and calculates distances to walls. """
+    def cast_rays(self):
+        # 1) directions en numpy
         start_angle = self.angle - self.ray_spread / 2
-        
-        # Pre-calculate ray directions for all rays
-        ray_directions = np.zeros((self.num_rays, 2))
         angles = np.linspace(start_angle, start_angle + self.ray_spread, self.num_rays)
-        ray_directions[:, 0] = np.cos(angles)
-        ray_directions[:, 1] = np.sin(angles)
-        ray_end_theoretical = self.pos + ray_directions * self.ray_length
+        ray_dirs = np.stack([np.cos(angles), np.sin(angles)], axis=1)  # (N,2)
 
-        # Cast rays
-        ray_start = np.array([self.pos] * self.num_rays)
-        self.rays_end_points = line_segment_intersection(ray_start, ray_end_theoretical, wall_array[:,0], wall_array[:,1])
-        self.ray_distances = np.linalg.norm(self.rays_end_points - self.pos, axis=1) # shape (num_rays,)
+        # 1) Créer un tenseur (N,2) dont chaque ligne = [self.pos.x, self.pos.y]
+        coord = torch.tensor([self.pos.x, self.pos.y],
+                             dtype=torch.float32,
+                             device=self.device)
+        p1_t = coord.unsqueeze(0).repeat(self.num_rays, 1)  # shape (N,2)
+
+        # 2) Calculer p2_t
+        ray_dirs = torch.as_tensor(ray_dirs, dtype=torch.float32, device=self.device)  # (N,2)
+        p2_t = p1_t + ray_dirs * self.ray_length
+
+        # 3) Intersection
+        inter_t = line_segment_intersection(
+            p1_t, p2_t,
+            self.wall_p1_t,
+            self.wall_s
+        )  # (N,2)
+
+        # 4) Retour en NumPy pour Pygame
+        inter_np = inter_t.cpu().numpy()
+        self.rays_end_points = inter_np
+        dists = torch.linalg.norm(inter_t - p1_t, dim=1)
+        self.ray_distances = dists.cpu().numpy()
             
     def set_next_gate_info(self, gates, current_gate_index):
         """Calculate the relative position of the next gate to the car.
@@ -195,20 +214,22 @@ class Car:
         center = np.array(self.pos, dtype=float)  # shape (2,)
         rotated = (corners - center) @ R.T + center  # shape (4,2)
 
-        # 4) Build segment endpoints arrays for the 4 edges
-        car_p1 = rotated
-        car_p2 = np.roll(rotated, -1, axis=0)       # shifts rows so 4→1
+        # 4) Conversion en tenseurs sur le bon device
+        device = self.device
+        p1_t = torch.as_tensor(rotated, dtype=torch.float32, device=device)  # (4,2)
+        p2_t = torch.roll(p1_t, shifts=-1, dims=0)  # (4,2)
 
-        # 5) Walls into arrays
-        wall_p1 = np.array([e[0] for e in elements], dtype=float)
-        wall_p2 = np.array([e[1] for e in elements], dtype=float)
+        # 5) Intersection via torch
+        #    self.wall_p1_t et self.wall_s ont été initialisés une fois dans load_map()
+        inter_t = line_segment_intersection(
+            p1_t, p2_t,
+            self.wall_p1_t,
+            self.wall_s
+        )  # (4,2) résultant des points d'intersection ou 0
 
-        # 6) Vectorized intersection test
-        hits = line_segment_intersection(car_p1, car_p2, wall_p1, wall_p2)
-        # hits[i] is [0,0] if car edge i missed all walls
-
-        # 7) If any edge hit a wall, collision!
-        return np.any(np.any(hits != 0, axis=1))
+        # 6) Détection de collision : une intersection non‑nulle signifie collision
+        hit_mask = torch.any(inter_t != 0.0, dim=1)  # (4,) bool
+        return bool(hit_mask.any())
     
 
     def draw(self, screen):
