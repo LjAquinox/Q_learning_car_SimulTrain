@@ -1,13 +1,12 @@
 import numpy as np
 import time
 from classes.game import Game
-from classes.car import Car
+from classes.visual_car import VisualCar
 import pygame
 import os
 from config import *
 
-
-class TrainingEnvironment:
+class VisualTrainingEnvironment:
     def __init__(self, map_name=DEFAULT_MAP):
         self.map_name = map_name
         # Initialize pygame without display
@@ -16,12 +15,15 @@ class TrainingEnvironment:
         pygame.init()
 
         self.game = Game()
+        # Replace the car with VisualCar and pass the game reference
+        self.game.car = VisualCar(self.game.start_pos[0], self.game.start_pos[1])
         self.game.load_map(self.map_name)
         self.prev_distance_to_next_gate_start = None
         self.prev_distance_to_next_gate_end = None
         self.gate_reward = 0
         self.speed_reward = 0
         self.gates_distance_reward = 0
+
     def _calculate_reward(self):
         reward = -1
 
@@ -34,22 +36,10 @@ class TrainingEnvironment:
         if self.game.game_over:
             reward -= 100
 
-        
         # Reward for speed
         reward += (self.game.car.vel.length() / self.game.car.max_speed) / 25
         self.speed_reward += (self.game.car.vel.length() / self.game.car.max_speed) / 25
-        """
-        # bonus for getting closer to the next gate
-        distance_reduction = 0
-        if self.prev_distance_to_next_gate_start is not None: #expecting shape (range_index,)
-            distance_reduction += (self.prev_distance_to_next_gate_start - self.game.car.distance_gates[0,0])
-            distance_reduction += (self.prev_distance_to_next_gate_end - self.game.car.distance_gates[0,-1])
-        self.prev_distance_to_next_gate_start = self.game.car.distance_gates[0,0]
-        self.prev_distance_to_next_gate_end = self.game.car.distance_gates[0,-1]
 
-        reward += distance_reduction / (self.game.car.distance_gates[0,0] + self.game.car.distance_gates[0,-1]) 
-        self.gates_distance_reward += distance_reduction / (self.game.car.distance_gates[0,0] + self.game.car.distance_gates[0,-1])
-        """
         return reward
 
     def step(self, action):
@@ -85,7 +75,7 @@ class TrainingEnvironment:
         self.game.update(1)
 
         # Get new state and reward
-        state = self.game.car.get_state()
+        state = self.game.car.get_state(self.game.screen)
         reward = self._calculate_reward()
         done = self.game.game_over
 
@@ -98,7 +88,9 @@ class TrainingEnvironment:
         self.speed_reward = 0
         self.gates_distance_reward = 0
         self.game.reset_game()
-        return self.game.car.get_state()
+        # Make sure the car has the game reference after reset
+        self.game.car.game = self.game
+        return self.game.car.get_state(self.game.screen)
 
     def close(self):
         pygame.quit() 

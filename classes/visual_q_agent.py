@@ -1,76 +1,55 @@
-import numpy as np
-import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
+import random
+from classes.q_agent import QAgent, SumTree
 
-class SumTree:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.tree = np.zeros(2 * capacity - 1)
-        self.data = np.zeros(capacity, dtype=object)
-        self.n_entries = 0
-        self.position = 0
-
-    def _propagate(self, idx, change):
-        parent = (idx - 1) // 2
-        self.tree[parent] += change
-        if parent != 0:
-            self._propagate(parent, change)
-
-    def _retrieve(self, idx, s):
-        left = 2 * idx + 1
-        right = left + 1
-
-        if left >= len(self.tree):
-            return idx
-
-        if s <= self.tree[left]:
-            return self._retrieve(left, s)
-        else:
-            return self._retrieve(right, s - self.tree[left])
-
-    def total(self):
-        return self.tree[0]
-
-    def add(self, priority, data):
-        idx = self.position + self.capacity - 1
-        self.data[self.position] = data
-        self.update(idx, priority)
-
-        self.position = (self.position + 1) % self.capacity
-        if self.n_entries < self.capacity:
-            self.n_entries += 1
-
-    def update(self, idx, priority):
-        change = priority - self.tree[idx]
-        self.tree[idx] = priority
-        self._propagate(idx, change)
-
-    def get(self, s):
-        idx = self._retrieve(0, s)
-        data_idx = idx - self.capacity + 1
-        return idx, self.tree[idx], self.data[data_idx]
-
-class QNetwork(nn.Module):
-    def __init__(self, state_size, action_size):
-        super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_size, 32)
-        self.fc2 = nn.Linear(32, 64)
-        self.fc3 = nn.Linear(64, 64)
-        self.fc4 = nn.Linear(64, action_size)
+class VisualQNetwork(nn.Module):
+    def __init__(self, input_shape, action_size):
+        super(VisualQNetwork, self).__init__()
         
-    def forward(self, x):
+        # CNN layers for processing visual input
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=7, stride=3)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        
+        # Calculate the size of the flattened features
+        self.conv_output_size = self._get_conv_output_size(input_shape)
+        
+        # Fully connected layers
+        self.fc1 = nn.Linear(self.conv_output_size + 4, 512)  # +4 for speed, vel_x, vel_y, angle
+        self.fc2 = nn.Linear(512, action_size)
+        
+    def _get_conv_output_size(self, shape):
+        # Create a dummy input to calculate the output size
+        x = torch.zeros(1, 1, *shape)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        return int(np.prod(x.shape))
+        
+    def forward(self, visual_input, car_state):
+        # Process visual input through CNN
+        x = visual_input.unsqueeze(1)  # Add channel dimension
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)  # Flatten
+        
+        # Combine with car state
+        x = torch.cat([x, car_state], dim=1)
+        
+        # Process through fully connected layers
         x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-        return self.fc4(x)
+        return self.fc2(x)
 
-class QAgent:
-    def __init__(self, state_size, action_size, learning_rate=0.00025, gamma=0.95, epsilon=0.85,
-                  epsilon_min=0.12, epsilon_decay=0.995, memory_size=150000, target_update_frequency=10000,
-                  lr_decay=0.995, lr_min=0.00001, alpha=0.6, beta=0.4, beta_increment=0.001):
-        self.state_size = state_size
+class VisualQAgent():
+    def __init__(self, input_shape, action_size, learning_rate=0.00025, gamma=0.95, epsilon=0.85,
+                 epsilon_min=0.12, epsilon_decay=0.995, memory_size=10000, target_update_frequency=10000,
+                 lr_decay=0.995, lr_min=0.00001, alpha=0.6, beta=0.4, beta_increment=0.001):
+        
+        self.state_size = input_shape
         self.action_size = action_size
         self.memory_size = memory_size
         self.target_update_frequency = target_update_frequency
@@ -97,9 +76,9 @@ class QAgent:
         self.lr_decay = lr_decay
         self.lr_min = lr_min
         
-        # Initialize PyTorch model and target model
-        self.model = QNetwork(state_size, action_size).to(self.device)
-        self.target_model = QNetwork(state_size, action_size).to(self.device)
+        # Initialize PyTorch model and target model with visual input
+        self.model = VisualQNetwork(input_shape, action_size).to(self.device)
+        self.target_model = VisualQNetwork(input_shape, action_size).to(self.device)
         self.target_model.load_state_dict(self.model.state_dict())
         self.target_model.eval()
         
@@ -107,14 +86,18 @@ class QAgent:
         
     def remember(self, state, action, reward, next_state, done):
         # Convert inputs to tensors
-        state = torch.tensor(state, dtype=torch.float32, device=self.device).flatten()
-        next_state = torch.tensor(next_state, dtype=torch.float32, device=self.device).flatten()
+        visual_input = torch.tensor(state[0], dtype=torch.float32, device=self.device)
+        car_state = torch.tensor(state[1:], dtype=torch.float32, device=self.device)
+        
+        next_visual_input = torch.tensor(next_state[0], dtype=torch.float32, device=self.device)
+        next_car_state = torch.tensor(next_state[1:], dtype=torch.float32, device=self.device)
+        
         action = torch.tensor(action, dtype=torch.long, device=self.device)
         reward = torch.tensor(reward, dtype=torch.float32, device=self.device)
         done = torch.tensor(done, dtype=torch.float32, device=self.device)
         
         # Store experience with maximum priority
-        experience = (state, action, reward, next_state, done)
+        experience = ((visual_input, car_state), action, reward, (next_visual_input, next_car_state), done)
         self.memory.add(self.max_priority, experience)
 
     def act(self, state):
@@ -123,8 +106,9 @@ class QAgent:
         
         self.model.eval()
         with torch.no_grad():
-            state = torch.tensor(state, dtype=torch.float32, device=self.device).reshape(1, -1)
-            act_values = self.model(state)
+            visual_input = torch.tensor(state[0], dtype=torch.float32, device=self.device).unsqueeze(0)
+            car_state = torch.tensor(state[1:], dtype=torch.float32, device=self.device).unsqueeze(0)
+            act_values = self.model(visual_input, car_state)
         return torch.argmax(act_values).item()
     
     def replay(self, batch_size):
@@ -157,19 +141,21 @@ class QAgent:
         weights = weights / weights.max()
         
         # Prepare batch
-        states = torch.stack([exp[0] for exp in experiences])
+        visual_inputs = torch.stack([exp[0][0] for exp in experiences])
+        car_states = torch.stack([exp[0][1] for exp in experiences])
         actions = torch.stack([exp[1] for exp in experiences])
         rewards = torch.stack([exp[2] for exp in experiences])
-        next_states = torch.stack([exp[3] for exp in experiences])
+        next_visual_inputs = torch.stack([exp[3][0] for exp in experiences])
+        next_car_states = torch.stack([exp[3][1] for exp in experiences])
         dones = torch.stack([exp[4] for exp in experiences])
         
         # Get current Q values
         self.model.train()
-        current_q_values = self.model(states).gather(1, actions.unsqueeze(1))
+        current_q_values = self.model(visual_inputs, car_states).gather(1, actions.unsqueeze(1))
         
         # Get next Q values and compute target Q values
         with torch.no_grad():
-            next_q_values = self.target_model(next_states).max(1)[0]
+            next_q_values = self.target_model(next_visual_inputs, next_car_states).max(1)[0]
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
             
         # Compute TD errors and update priorities
@@ -195,11 +181,11 @@ class QAgent:
             
         # Calculate Q-value statistics
         with torch.no_grad():
-            q_values = self.model(states)
+            q_values = self.model(visual_inputs, car_states)
             mean_q = q_values.mean().item()
             std_q = q_values.std().item()
             
-        return loss.item(), mean_q, std_q
+        return loss.item(), mean_q, std_q 
     
     def load(self, name):
         self.model.load_state_dict(torch.load(name))
@@ -213,5 +199,3 @@ class QAgent:
             self.learning_rate *= self.lr_decay
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = self.learning_rate
-
-

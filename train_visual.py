@@ -1,18 +1,21 @@
 import numpy as np
-from classes.q_agent import QAgent
-from classes.training_env import TrainingEnvironment
+from classes.visual_q_agent import VisualQAgent
+from classes.visual_training_env import VisualTrainingEnvironment
 import os
+import torch
 
-def train(num_episodes=1200, batch_size=64):
-    
+def train_visual(num_episodes=1200, batch_size=64):
     # Create environment
-    env = TrainingEnvironment()
-    # Get state size from the car's get_state method
+    env = VisualTrainingEnvironment()
+    
+    # Get initial state to determine input shape
     initial_state = env.reset()
-    state_size = len(initial_state)
-    action_size = 6  #0=accelerate, 1=brake, 2=left, 3=right, 4 = accelerate and left, 5 = accelerate and right
-    # Create agent
-    agent = QAgent(state_size=state_size, action_size=action_size)
+    screen_shape = initial_state[0].shape  # Get the shape of the visual input
+    #print(screen_shape)
+    action_size = 6  # 0=accelerate, 1=brake, 2=left, 3=right, 4=accelerate and left, 5=accelerate and right
+    
+    # Create agent with visual input shape
+    agent = VisualQAgent(input_shape=screen_shape, action_size=action_size)
     best_reward = 0
 
     # Training loop
@@ -37,14 +40,15 @@ def train(num_episodes=1200, batch_size=64):
         if env.gate_reward > best_reward:
             best_reward = env.gate_reward
             os.makedirs("models", exist_ok=True)
-            agent.save("models/_best_agent.h5")
+            agent.save("models/_best_visual_agent.h5")
         
         batch_count = iteration//batch_size
         batch_losses, batch_mean_qs, batch_std_qs = np.zeros(batch_count), np.zeros(batch_count), np.zeros(batch_count)
+        
         # Train on all experiences from this episode
         if iteration > 0:  # Only train if we have experiences
             for i in range(batch_count):
-                loss, mean_q, std_q = agent.replay(batch_size)  # Use all experiences from the episode
+                loss, mean_q, std_q = agent.replay(batch_size)
                 if loss > 0 and (episode + 1) % 5 == 0:  # Only update metrics if replay was successful and it's the episode where we print
                     batch_losses[i] = loss
                     batch_mean_qs[i] = mean_q
@@ -56,10 +60,10 @@ def train(num_episodes=1200, batch_size=64):
         agent.update_learning_rate()
 
         # Save model and print statistics periodically
-        if (episode + 1) % 5 == 0:
+        if (episode + 1) % 1 == 0:
             # Print episode statistics
             print(f"Episode: {episode + 1}/{num_episodes}")
-            print(f"  Reward: {episode_reward:.2f}, Gate Reward: {env.gate_reward:.2f}, Speed Reward: {env.speed_reward:.2f}, Gates Distance Reward: {env.gates_distance_reward:.2f}")
+            print(f"  Reward: {episode_reward:.2f}, Gate Reward: {env.gate_reward:.2f}, Speed Reward: {env.speed_reward:.2f}")
             print(f"  Average Loss: {np.mean(batch_losses):.4f}, Average Q-value: {np.mean(batch_mean_qs):.4f}, Q-value Std Dev: {np.mean(batch_std_qs):.4f}")
             print(f"  Epsilon: {agent.epsilon:.4f}")
             print(f"  Learning Rate: {agent.learning_rate:.6f}")
@@ -67,11 +71,10 @@ def train(num_episodes=1200, batch_size=64):
             print("-------------------")
             
             os.makedirs("models", exist_ok=True)
-            agent.save(f"models/agent_episode_{episode + 1}.h5")
+            agent.save(f"models/visual_agent_episode_{episode + 1}.h5")
 
     # Close environment
     env.close()
 
-
 if __name__ == "__main__":
-    train() 
+    train_visual() 

@@ -15,8 +15,8 @@ CYAN = (0, 255, 255)  # Gate rays
 
 # Map configuration
 MAP_DIR = "maps"
-DEFAULT_MAP = "map.json"
+DEFAULT_MAP = "map_with_gate.json"
 
 # Editor configuration
 GRID_SIZE = 20
-FILENAME_DEFAULT = "map.json" 
+FILENAME_DEFAULT = DEFAULT_MAP

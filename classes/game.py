@@ -19,9 +19,12 @@ class Game:
         self.walls = []
         self.wall_vectors = np.zeros((1, 2, 2)) #we don't know how many walls there are yet
         self.gates = []
+        self.gate_vectors = np.zeros((1, 2, 2)) #we don't know how many gates there are yet
+        self.gate_range = 2 # how many gates we will track on AI side
         self.start_pos = (WIDTH // 2, HEIGHT // 2) # Default if map has no start_pos
 
         self.car = Car(self.start_pos[0], self.start_pos[1])
+        
         self.show_rays = True  # Toggle ray display with 'R'
         self.game_over = False
 
@@ -58,13 +61,21 @@ class Game:
                 self.wall_vectors = np.zeros((len(self.walls), 2, 2))
                 for i, wall in enumerate(self.walls):
                     self.wall_vectors[i] = np.array([wall[0], wall[1]])
+                self.gate_vectors = np.zeros((len(self.gates), 2, 2))
+                for i, gate in enumerate(self.gates):
+                    self.gate_vectors[i] = np.array([gate[0], gate[1]])
 
                 self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 # p3 = shape (M,2), p4 = shape (M,2)
                 self.wall_p1_t = torch.as_tensor(self.wall_vectors[:,0,:], dtype=torch.float32, device=self.device)  # shape (M,2)
                 self.wall_p2_t = torch.as_tensor(self.wall_vectors[:,1,:], dtype=torch.float32, device=self.device)  # shape (M,2)
                 # Pre‑compute of vector s = p4 − p3
-                self.wall_s    = self.wall_p2_t - self.wall_p1_t                                       # shape (M,2)
+                self.wall_s    = self.wall_p2_t - self.wall_p1_t       
+                
+                self.gate_p1_t = torch.as_tensor(self.gate_vectors[:,0,:], dtype=torch.float32, device=self.device)  # shape (N,2)
+                self.gate_p2_t = torch.as_tensor(self.gate_vectors[:,1,:], dtype=torch.float32, device=self.device)  # shape (N,2)
+                # Pre‑compute of vector s = p4 − p3
+                self.gate_s    = self.gate_p2_t - self.gate_p1_t       
 
                 print(f"Map '{filename}' loaded successfully.")
                 # Reset car position if map is loaded after init
@@ -77,6 +88,7 @@ class Game:
                     self.gate_passed = False
                     self.score = 0
                     self.car.set_wall_tensors(self.wall_p1_t, self.wall_s, self.device)
+                    self.car.set_gates_tensors(self.gate_p1_t, self.gate_s, self.device)
 
         except FileNotFoundError:
             print(f"Error: Map file not found '{filepath}'. Using empty map.")
@@ -122,19 +134,18 @@ class Game:
 
         self.car.update(dt)
         self.car.cast_rays()
-        self.car.set_next_gate_info(self.gates, self.current_gate_index)
+        self.car.set_next_gate_info(self.gates, self.current_gate_index, self.gate_range)
 
         # Check collision with walls
-        if self.car.check_collision_with_elements(self.walls):
-             print("Wall Collision!")
+        if self.car.check_collision_with_elements("walls"):
+             #print("Wall Collision!")
              self.game_over = True
 
         # Check collision with current gate
         if self.current_gate_index < len(self.gates):
-            current_gate = [self.gates[self.current_gate_index]]
-            if self.car.check_collision_with_elements(current_gate):
+            if self.car.check_collision_with_elements("gates", self.current_gate_index):
                 if not self.gate_passed:
-                    print(f"Passed gate {self.current_gate_index + 1}!")
+                    #print(f"Passed gate {self.current_gate_index + 1}!")
                     self.gate_passed = True
                     self.score += 1
                     self.current_gate_index = (self.current_gate_index + 1) % len(self.gates)
@@ -144,28 +155,28 @@ class Game:
     def reset_game(self):
         """Reset the game state to start a new game"""
         self.car.pos = pygame.Vector2(self.start_pos)
-        self.car.vel = pygame.Vector2(0, 0)
+        self.car.vel = pygame.Vector2(self.car.min_vel, self.car.min_vel)
         self.car.angle = 0
         self.game_over = False
         self.current_gate_index = 0
         self.gate_passed = False
         self.score = 0
-        self.car.set_next_gate_info(self.gates, self.current_gate_index)
+        self.car.set_next_gate_info(self.gates, self.current_gate_index, self.gate_range)
         self.car.cast_rays()
 
 
     def draw_gate_rays(self):
         """Draw rays from the car to the start and end points of the next gate."""
         if self.gates and self.current_gate_index < len(self.gates):
-            self.car.set_next_gate_info(self.gates, self.current_gate_index)
-            distance_start, angle_start, distance_end, angle_end = self.car.distance_start, self.car.relative_angle_start, self.car.distance_end, self.car.relative_angle_end
-            # Calculate end points of the rays
-            start_ray_end = self.car.pos + pygame.Vector2(math.cos(self.car.angle + angle_start), math.sin(self.car.angle + angle_start)) * distance_start
-            end_ray_end = self.car.pos + pygame.Vector2(math.cos(self.car.angle + angle_end), math.sin(self.car.angle + angle_end)) * distance_end
-            
-            # Draw the rays in a different color (using CYAN)
-            pygame.draw.line(self.screen, CYAN, self.car.pos, start_ray_end, 2)
-            pygame.draw.line(self.screen, CYAN, self.car.pos, end_ray_end, 2)
+            self.car.set_next_gate_info(self.gates, self.current_gate_index, 1)
+            # we only draw the first gate ray for now the rest is for state
+            for i in range(self.car.num_rays_to_gate):
+                relative_angle_gates = self.car.relative_angle_gates[0,i]
+                distance_gates = self.car.distance_gates[0,i]
+                # Calculate end points of the rays
+                ray_end = self.car.pos + pygame.Vector2(math.cos(self.car.angle + relative_angle_gates), math.sin(self.car.angle + relative_angle_gates)) * distance_gates
+                # Draw the rays in a different color (using CYAN)
+                pygame.draw.line(self.screen, CYAN, self.car.pos, ray_end, 2)
 
 
 
@@ -206,8 +217,8 @@ class Game:
 
         # Draw next gate info
         if self.gates and self.current_gate_index < len(self.gates):
-            self.car.set_next_gate_info(self.gates, self.current_gate_index)
-            distance_start, angle_start, distance_end, angle_end = self.car.distance_start, self.car.relative_angle_start, self.car.distance_end, self.car.relative_angle_end
+            self.car.set_next_gate_info(self.gates, self.current_gate_index, 1)
+            distance_start, angle_start, distance_end, angle_end = self.car.distance_gates[0,0], self.car.relative_angle_gates[0,0], self.car.distance_gates[0,-1], self.car.relative_angle_gates[0,-1]
             angle_deg_start = math.degrees(angle_start)
             angle_deg_end = math.degrees(angle_end)
             gate_info = self.font.render(f"Next Gate: {distance_start:.1f} units, {angle_deg_start:.1f}°, and {distance_end:.1f} units, {angle_deg_end:.1f}°", True, WHITE)

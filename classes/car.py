@@ -7,14 +7,15 @@ import torch
 class Car:
     def __init__(self, x, y):
         self.pos = pygame.Vector2(x, y)
-        self.vel = pygame.Vector2(0, 0)
+        self.min_vel = 0.1
+        self.vel = pygame.Vector2(self.min_vel, self.min_vel)
         self.angle = 0  # Radians, 0 = right
         self.width = 15
         self.height = 30
         self.color = BLUE
 
         # Physics
-        self.min_speed = 0.3
+        self.min_speed = 0.02
         self.max_speed = 5.0
         self.acceleration = 0.1
         self.brake_power = 0.1
@@ -27,16 +28,14 @@ class Car:
         self.steering = 0 # -1 left, 0 straight, 1 right
 
         # Raycasting
-        self.num_rays = 15 # Number of rays
-        self.ray_length = 800 # Maximum ray length
+        self.num_rays = 30 # Number of rays
+        self.num_rays_to_gate = 5 # Number of rays to gate
+        self.ray_length = 600 # Maximum ray length
         self.ray_spread = math.pi * 1.5 # Total angle covered by rays (e.g., 270 degrees)
         self.ray_distances = np.ones(self.num_rays) * self.ray_length
         self.rays_end_points = np.zeros((self.num_rays, 2)) # For display
-
-        self.distance_start = 0
-        self.distance_end = 0
-        self.relative_angle_start = 0
-        self.relative_angle_end = 0
+        self.relative_angle_gates = np.zeros((1,self.num_rays)) # shape (range_index, num_rays) but we don't know range_index
+        self.distance_gates = np.zeros((1,self.num_rays)) # shape (range_index, num_rays) but we don't know range_index
 
         # Load and process car image
         self.car_image = pygame.image.load("car.png")
@@ -53,6 +52,11 @@ class Car:
         self.wall_s = wall_s
         self.device = device
 
+    def set_gates_tensors(self, gate_p1_t, gate_s, device):
+        self.gate_p1_t = gate_p1_t
+        self.gate_s = gate_s
+        self.device = device
+
     def get_state(self):
         """ Returns the current state for the Q-learning agent.
             Returns a tuple containing:
@@ -65,10 +69,8 @@ class Car:
         ray_distances = self.ray_distances
         #normalize ray distances
         ray_distances = ray_distances / self.ray_length
-        distance_start = self.distance_start
-        relative_angle_start = (self.relative_angle_start + math.pi) / (2 * math.pi)
-        distance_end = self.distance_end
-        relative_angle_end = (self.relative_angle_end + math.pi) / (2 * math.pi)
+        relative_angle_gates = (self.relative_angle_gates.flatten() + math.pi) % (2 * math.pi) - math.pi # shape (range_index, num_rays)
+        distance_gates = self.distance_gates.flatten() / (self.ray_length * 2) # shape (range_index, num_rays)
 
         # Get and normalize some car properties
         speed = (self.vel.length() - self.min_speed) / (self.max_speed - self.min_speed)  # Normalize speed
@@ -79,7 +81,7 @@ class Car:
         # Combine all state information
         state = (
             *ray_distances,
-            distance_start, relative_angle_start, distance_end, relative_angle_end,  # Next gate info
+            *relative_angle_gates, *distance_gates,  #  Next self.range_index gates info
             speed, vel_x, vel_y,  # Velocity info
             angle  # Car's angle
         )
@@ -129,18 +131,13 @@ class Car:
         self.pos += self.vel * dt
 
     def cast_rays(self):
-        # 1) directions en numpy
         start_angle = self.angle - self.ray_spread / 2
         angles = np.linspace(start_angle, start_angle + self.ray_spread, self.num_rays)
         ray_dirs = np.stack([np.cos(angles), np.sin(angles)], axis=1)  # (N,2)
 
-        # 1) Créer un tenseur (N,2) dont chaque ligne = [self.pos.x, self.pos.y]
-        coord = torch.tensor([self.pos.x, self.pos.y],
-                             dtype=torch.float32,
-                             device=self.device)
+        coord = torch.tensor([self.pos.x, self.pos.y], dtype=torch.float32, device=self.device)
         p1_t = coord.unsqueeze(0).repeat(self.num_rays, 1)  # shape (N,2)
 
-        # 2) Calculer p2_t
         ray_dirs = torch.as_tensor(ray_dirs, dtype=torch.float32, device=self.device)  # (N,2)
         p2_t = p1_t + ray_dirs * self.ray_length
 
@@ -151,46 +148,33 @@ class Car:
             self.wall_s
         )  # (N,2)
 
-        # 4) Retour en NumPy pour Pygame
         inter_np = inter_t.cpu().numpy()
         self.rays_end_points = inter_np
         dists = torch.linalg.norm(inter_t - p1_t, dim=1)
         self.ray_distances = dists.cpu().numpy()
-            
-    def set_next_gate_info(self, gates, current_gate_index):
-        """Calculate the relative position of the next gate to the car.
-            Returns (distance, angle) where angle is relative to car's direction for
-            both start and end of the gate. angle is 0 to 1
-        """
-        if not gates or current_gate_index >= len(gates):
-            return (0, 0)  # No gate to track
-            
-        gate = gates[current_gate_index]
-        
-        # Calculate vector from car to gate
-        to_gate_start = pygame.Vector2(gate[0]) - self.pos
-        to_gate_end = pygame.Vector2(gate[1]) - self.pos
-        
-        # Calculate distance
-        self.distance_start = to_gate_start.length()
-        self.distance_end = to_gate_end.length()
-        
-        # Calculate angle relative to car's direction
-        # First get the angle of the vector to gate
-        gate_angle_start = math.atan2(to_gate_start.y, to_gate_start.x)
-        gate_angle_end = math.atan2(to_gate_end.y, to_gate_end.x)
-        # Then subtract car's angle to get relative angle
-        relative_angle_start = gate_angle_start - self.angle
-        relative_angle_end = gate_angle_end - self.angle
-        # Normalize angle to [-pi, pi]
-        relative_angle_start = (relative_angle_start + math.pi) % (2 * math.pi) - math.pi
-        relative_angle_end = (relative_angle_end + math.pi) % (2 * math.pi) - math.pi
-        
-        self.relative_angle_start = relative_angle_start
-        self.relative_angle_end = relative_angle_end
         
 
-    def check_collision_with_elements(self, elements):
+    def set_next_gate_info(self, gates, current_gate_index, range_index = 1):
+        """Calculate the relative position of the next gate to the car.
+            Returns (distance, angle) where angle is relative to car's direction for
+            all num_rays rays for each gate in the range_index.
+            for each gate the rays are all hitting the gate from start to end. angle in [0,1]
+        """
+        num_rays = self.num_rays_to_gate
+        self.relative_angle_gates=np.zeros((range_index,num_rays))
+        self.distance_gates=np.zeros((range_index,num_rays))
+
+        for i in range(range_index):
+            idx = (current_gate_index + i) % len(gates)
+            gate = gates[idx]
+            gate_segments = np.linspace(gate[0], gate[1], num_rays)
+            # Calculate vector from car to gate
+            to_gate_segments = gate_segments - np.array([self.pos.x, self.pos.y]*num_rays).reshape(num_rays, 2)
+            # Calculate angle relative to car's direction
+            self.relative_angle_gates[i]  = np.arctan2(to_gate_segments[:,1], to_gate_segments[:,0]) - self.angle
+            self.distance_gates[i] = np.linalg.norm(to_gate_segments, axis=1)
+
+    def check_collision_with_elements(self, element = "walls", index = None):
         """
         Checks collision of the oriented car rectangle against wall segments.
         Returns True if any segment intersects.
@@ -221,12 +205,18 @@ class Car:
 
         # 5) Intersection via torch
         #    self.wall_p1_t et self.wall_s ont été initialisés une fois dans load_map()
-        inter_t = line_segment_intersection(
-            p1_t, p2_t,
-            self.wall_p1_t,
-            self.wall_s
-        )  # (4,2) résultant des points d'intersection ou 0
-
+        if element == "walls":
+            inter_t = line_segment_intersection(
+                p1_t, p2_t,
+                self.wall_p1_t,
+                self.wall_s
+            )  # (4,2) résultant des points d'intersection ou 0
+        elif element == "gates":
+            inter_t = line_segment_intersection(
+                p1_t, p2_t,
+                self.gate_p1_t[index],
+                self.gate_s[index]
+            )  # (4,2) résultant des points d'intersection ou 0
         # 6) Détection de collision : une intersection non‑nulle signifie collision
         hit_mask = torch.any(inter_t != 0.0, dim=1)  # (4,) bool
         return bool(hit_mask.any())
