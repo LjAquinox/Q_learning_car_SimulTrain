@@ -88,8 +88,6 @@ class VisualTrainingEnvironment:
         self.speed_reward = 0
         self.gates_distance_reward = 0
         self.game.reset_game()
-        # Make sure the car has the game reference after reset
-        self.game.car.game = self.game
         return self.game.car.get_state(self.game.screen)
 
     def close(self):

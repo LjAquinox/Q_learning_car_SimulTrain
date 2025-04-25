@@ -23,8 +23,11 @@ class VisualCar(Car):
         - Car's speed (float)
         - Car's angle (float)
         """
+
         # Convert to grayscale and normalize
         screen = pygame.surfarray.array3d(screen)
+        # keep every other pixel
+        screen = screen[::2, ::2]
         screen = np.mean(screen, axis=2) / 255.0
         
         # Get and normalize car properties

@@ -13,6 +13,7 @@ def train_visual(num_episodes=1200, batch_size=64):
     screen_shape = initial_state[0].shape  # Get the shape of the visual input
     #print(screen_shape)
     action_size = 6  # 0=accelerate, 1=brake, 2=left, 3=right, 4=accelerate and left, 5=accelerate and right
+    save_every_n_episodes = 1
     
     # Create agent with visual input shape
     agent = VisualQAgent(input_shape=screen_shape, action_size=action_size)
@@ -24,6 +25,7 @@ def train_visual(num_episodes=1200, batch_size=64):
         episode_reward = 0
         done = False
         iteration = 0
+        batch_losses, batch_mean_qs, batch_std_qs = [], [], []
 
         # Collect experiences during the episode
         while not done and iteration < 10000:
@@ -33,6 +35,14 @@ def train_visual(num_episodes=1200, batch_size=64):
             next_state, reward, done = env.step(action)
             # Store experience in memory
             agent.remember(state, action, reward, next_state, done)
+            # Learn
+            loss, mean_q, std_q = agent.replay(batch_size)
+            # Save losses for logging
+            if loss != 0 and (episode + 1) % save_every_n_episodes == 0:
+                batch_losses.append(loss)
+                batch_mean_qs.append(mean_q)
+                batch_std_qs.append(std_q)
+
             episode_reward += reward
             state = next_state
             iteration += 1
@@ -41,18 +51,6 @@ def train_visual(num_episodes=1200, batch_size=64):
             best_reward = env.gate_reward
             os.makedirs("models", exist_ok=True)
             agent.save("models/_best_visual_agent.h5")
-        
-        batch_count = iteration//batch_size
-        batch_losses, batch_mean_qs, batch_std_qs = np.zeros(batch_count), np.zeros(batch_count), np.zeros(batch_count)
-        
-        # Train on all experiences from this episode
-        if iteration > 0:  # Only train if we have experiences
-            for i in range(batch_count):
-                loss, mean_q, std_q = agent.replay(batch_size)
-                if loss > 0 and (episode + 1) % 5 == 0:  # Only update metrics if replay was successful and it's the episode where we print
-                    batch_losses[i] = loss
-                    batch_mean_qs[i] = mean_q
-                    batch_std_qs[i] = std_q
 
         # Update epsilon and learning rate
         if agent.epsilon > agent.epsilon_min:
@@ -60,7 +58,7 @@ def train_visual(num_episodes=1200, batch_size=64):
         agent.update_learning_rate()
 
         # Save model and print statistics periodically
-        if (episode + 1) % 1 == 0:
+        if (episode + 1) % save_every_n_episodes == 0:
             # Print episode statistics
             print(f"Episode: {episode + 1}/{num_episodes}")
             print(f"  Reward: {episode_reward:.2f}, Gate Reward: {env.gate_reward:.2f}, Speed Reward: {env.speed_reward:.2f}")

@@ -10,16 +10,16 @@ class VisualQNetwork(nn.Module):
         super(VisualQNetwork, self).__init__()
         
         # CNN layers for processing visual input
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=7, stride=3)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=9, stride=4)
+        self.conv2 = nn.Conv2d(16, 16, kernel_size=5, stride=2)
+        self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=1)
         
         # Calculate the size of the flattened features
         self.conv_output_size = self._get_conv_output_size(input_shape)
         
         # Fully connected layers
-        self.fc1 = nn.Linear(self.conv_output_size + 4, 512)  # +4 for speed, vel_x, vel_y, angle
-        self.fc2 = nn.Linear(512, action_size)
+        self.fc1 = nn.Linear(self.conv_output_size + 4, 256)  # +4 for speed, vel_x, vel_y, angle
+        self.fc2 = nn.Linear(256, action_size)
         
     def _get_conv_output_size(self, shape):
         # Create a dummy input to calculate the output size
@@ -46,8 +46,8 @@ class VisualQNetwork(nn.Module):
 
 class VisualQAgent():
     def __init__(self, input_shape, action_size, learning_rate=0.00025, gamma=0.95, epsilon=0.85,
-                 epsilon_min=0.12, epsilon_decay=0.995, memory_size=10000, target_update_frequency=10000,
-                 lr_decay=0.995, lr_min=0.00001, alpha=0.6, beta=0.4, beta_increment=0.001):
+                 epsilon_min=0.12, epsilon_decay=0.995, memory_size=3000, target_update_frequency=5000,
+                 lr_decay=0.995, lr_min=0.001, alpha=0.6, beta=0.4, beta_increment=0.001):
         
         self.state_size = input_shape
         self.action_size = action_size
